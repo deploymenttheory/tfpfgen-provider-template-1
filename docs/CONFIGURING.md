@@ -83,13 +83,12 @@ committed observations exist yet. Otherwise the committed observations are
 used as-is. A dispatch can also pass `reuse_audit_run_id` to carry forward
 the observations of an earlier pipeline run instead of auditing again.
 
-**It creates real objects.** Every one carries the `audit.name_prefix`, the
-run is bounded by `audit.max_objects` and `audit.rate_limit_rps`, and
-cleanup deletes prefix-matched objects at the start and end of every run.
-Even so: point it only at a disposable tenant, and affirm that by setting
-**`TFPFGEN_SANDBOX_OK`** in the repository — the audit refuses to touch a
-live API until the operator has declared the tenant a sandbox, never
-production.
+**It creates real objects — and deletes them.** Every one carries the
+`audit.name_prefix`, the run is bounded by `audit.max_objects` and
+`audit.rate_limit_rps`, and cleanup deletes prefix-matched objects at the
+start and end of every run. Even so: run the audit only against sandbox or
+non-production tenants. The toolkit does not police this — it is the
+operator's responsibility.
 
 **`audit/inputs.json`** is the small optional authored file of values the
 audit cannot synthesize — a valid value for an example-less field, an
