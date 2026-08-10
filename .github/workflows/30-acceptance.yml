@@ -1,0 +1,16 @@
+# Thin caller: live acceptance tests; dispatch/schedule only — real API quota.
+name: acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      environment: { type: string, default: acceptance, description: GitHub environment whose protection rules gate the run }
+  # schedule:
+  #   - cron: "0 6 * * 1" # weekly; uncomment once an 'acceptance' environment exists
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/30-acceptance.yml@v0
+    with:
+      environment: ${{ inputs.environment || 'acceptance' }}
+    secrets: inherit

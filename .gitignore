@@ -1,0 +1,25 @@
+# Go
+*.test
+*.out
+vendor/
+dist/
+terraform-provider-*
+!terraform-provider-*/
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+override.tf
+override.tf.json
+
+# Local agent state
+.claude/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/

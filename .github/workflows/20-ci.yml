@@ -1,0 +1,11 @@
+# Thin caller: build, vet, lint, coverage gate and the drift gates live in the toolkit.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  ci:
+    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/20-ci.yml@v0

@@ -1,0 +1,13 @@
+# Thin caller: goreleaser build, sign and registry publish live in the toolkit.
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/50-release.yml@v0
+    secrets:
+      gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+      gpg-private-key-passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}

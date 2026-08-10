@@ -1,0 +1,19 @@
+# Thin caller: the generation pipeline lives in the toolkit and arrives by tag.
+name: generate
+on:
+  workflow_dispatch:
+    inputs:
+      audit: { type: boolean, default: false, description: Run the live-API audit even when committed observations exist }
+      reuse_audit_run_id: { type: string, default: "", description: Reuse the observations artifact of this earlier run }
+      openapi_url: { type: string, default: "", description: Upstream OpenAPI document URL, first run only }
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  generate:
+    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/10-generate.yml@v0
+    with:
+      audit: ${{ inputs.audit }}
+      reuse_audit_run_id: ${{ inputs.reuse_audit_run_id }}
+      openapi_url: ${{ inputs.openapi_url }}
+    secrets: inherit

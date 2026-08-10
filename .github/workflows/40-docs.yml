@@ -1,0 +1,12 @@
+# Thin caller: registry docs as a fixed point; opens a PR only when they drift.
+name: docs
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  docs:
+    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/40-docs.yml@v0

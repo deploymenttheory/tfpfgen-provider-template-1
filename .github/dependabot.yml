@@ -1,0 +1,8 @@
+# Keeps the thin callers' toolkit pin moving: when the toolkit's 1.0.0 freeze
+# cuts v1, dependabot proposes the @v0 -> @v1 bump here as a reviewable PR.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
