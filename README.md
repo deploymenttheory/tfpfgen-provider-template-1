@@ -31,6 +31,10 @@ behavior improvements reach every provider repo without touching it.
    | `oauth2_client_credentials` | `TFPFGEN_AUTH_CLIENT_ID`, `TFPFGEN_AUTH_CLIENT_SECRET` |
    | `github_app` | `TFPFGEN_AUTH_APP_ID`, `TFPFGEN_AUTH_APP_PRIVATE_KEY` |
    | releases (always) | `GPG_PRIVATE_KEY`, `GPG_PRIVATE_KEY_PASSPHRASE` |
+   | optional, for the pipeline's own App | `TFPFGEN_APP_ID`, `TFPFGEN_APP_PRIVATE_KEY` |
+
+   The last pair is what lets generation resume by itself once corrections
+   are decided; without it that one step is dispatched by hand.
 
 4. **Dispatch the pipeline** (Actions → generate → Run workflow), passing
    `openapi_url` on the first run — before the tree carries the pinned

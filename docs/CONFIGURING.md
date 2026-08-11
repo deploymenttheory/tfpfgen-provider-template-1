@@ -51,6 +51,12 @@ only the roles your `auth.method` needs:
 Releases separately need `GPG_PRIVATE_KEY` and — when the key has one —
 `GPG_PRIVATE_KEY_PASSPHRASE`; the registry requires signed checksums.
 
+Two further optional secrets, `TFPFGEN_APP_ID` and `TFPFGEN_APP_PRIVATE_KEY`,
+belong to the pipeline's own GitHub App rather than to any `auth.method`. They
+are what lets generation resume by itself after the last correction is
+decided — see
+[The GitHub App the auto-continuation needs](#the-github-app-the-auto-continuation-needs).
+
 Validation checks presence without reading values; only the audit job ever
 receives them. Acceptance tests use a different namespace entirely — the
 `TF_<PROVIDER>_*` variables the generated provider itself reads, held in a
@@ -82,7 +88,7 @@ pipeline order. Each is a thin caller; the behaviour lives in the toolkit.
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `10-generate` | dispatch | The generation chain above. Also publishes the proposed corrections and opens one pull request per correction. |
-| `20-corrections` | a pull request closing | Records your decision on a correction PR, and resumes generation once none are left open. |
+| `20-corrections` | a correction pull request closing | Records your decision on it, and resumes generation once no correction PR is left open. |
 | `30-ci` | push to `main`, pull requests | Build, vet, lint, coverage gate, and the drift gates that refuse a hand edit to a derived file. |
 | `40-acceptance` | dispatch (schedule, once enabled) | Live acceptance tests against a real tenant, gated by a GitHub environment. Never on push — it spends real API quota. |
 | `50-docs` | weekly, dispatch | Regenerates `docs/` from the provider schema; opens a PR only when they drifted. |
@@ -116,10 +122,11 @@ audit evidence behind it.
   into `spec/corrections/`, where revision applies it to produce
   `spec/revised.yaml`, the single source of truth for all generation.
 - **Reject — close the pull request without merging.** A rejection marker is
-  committed to `spec/corrections/rejected/`, naming the observation id and
-  the reason, and that observation is never proposed again while the marker
-  stands. **Your closing comment becomes the recorded reason**, so say why —
-  the marker is what a future maintainer reads to understand the refusal.
+  committed to `spec/corrections/rejected/<observation-id>.json`, and that
+  observation is never proposed again while the marker stands. **The last
+  comment on the PR becomes the recorded reason**, so leave one before you
+  close — the marker is what a future maintainer reads to understand the
+  refusal, and with no comment it records only "closed without merging".
   Deleting the marker is the only way to make the proposal eligible again.
 
 `tfpfgen spec revise` hard-fails while any proposal is still pending, naming
@@ -135,25 +142,40 @@ open the generated-provider PR on `tfpfgen/run-<id>`.
 
 That auto-continuation is the only part of the flow that depends on more than
 the stock `GITHUB_TOKEN`; see below. Without it, nothing is lost and nothing
-is stuck — you dispatch `10-generate` yourself, passing the
-`reuse_audit_run_id` named in the correction PR body, and the run continues
-from the same observations.
+is stuck — the run's log tells you the run id, and you dispatch
+**Actions → generate → Run workflow** yourself with `reuse_audit_run_id` set
+to the number on the `tfpfgen-run-id:` line at the foot of any correction PR
+body. The run continues from the same observations.
 
 ### The GitHub App the auto-continuation needs
 
-A workflow run started by `GITHUB_TOKEN` cannot start another workflow run —
-GitHub blocks that deliberately, to stop recursive automation. So resuming
-generation after the last correction PR closes requires a token that is not
-`GITHUB_TOKEN`: a GitHub App installed on this repository, with **contents:
-write** and **pull requests: write**, whose credentials are set as repository
-secrets.
+A `workflow_dispatch` made with `GITHUB_TOKEN` starts no run — GitHub blocks
+that deliberately, to stop workflows triggering themselves forever. So
+resuming generation after the last correction PR closes requires a token that
+is not `GITHUB_TOKEN`: a **GitHub App installed on this repository**, whose
+credentials are set as two repository secrets:
 
-Your organisation supplies the App; the toolkit does not ship one, and the
-exact App is an org decision. Install it on this provider repository and set
-its two secrets. With them absent, everything else still works — corrections
-are still proposed as PRs, your merges and closes are still recorded — only
-the automatic resume is skipped, and the manual dispatch above takes its
-place.
+| Secret | What it is |
+|---|---|
+| `TFPFGEN_APP_ID` | App ID of the pipeline's GitHub App. |
+| `TFPFGEN_APP_PRIVATE_KEY` | PEM private key of that same App. |
+
+These are the **pipeline's** App and are unrelated to `TFPFGEN_AUTH_APP_ID`
+and `TFPFGEN_AUTH_APP_PRIVATE_KEY` in the secrets table above, which are one
+way of authenticating to the API being audited. Setting one pair does not set
+the other.
+
+The App needs repository permissions **contents: write** (to commit rejection
+markers and correction branches), **pull requests: write** (to open and read
+the correction PRs) and **issues: write** (labels are the issues API, even on
+a pull request). The toolkit does not ship an App and does not name one —
+your organisation supplies it and installs it on this provider repository.
+
+With the secrets absent everything else still works: correction PRs are still
+opened, still labelled, and your merges and closes are still recorded as
+acceptances and rejections. Only the automatic resume is skipped — the
+workflow says so in its log rather than failing — and the manual dispatch
+above takes its place.
 
 ### What a first run looks like
 

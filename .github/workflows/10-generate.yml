@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write # correction PR labels are the issues API
 jobs:
   generate:
     uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/10-generate.yml@v0
