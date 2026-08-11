@@ -149,33 +149,129 @@ body. The run continues from the same observations.
 
 ### The GitHub App the auto-continuation needs
 
-A `workflow_dispatch` made with `GITHUB_TOKEN` starts no run — GitHub blocks
-that deliberately, to stop workflows triggering themselves forever. So
-resuming generation after the last correction PR closes requires a token that
-is not `GITHUB_TOKEN`: a **GitHub App installed on this repository**, whose
-credentials are set as two repository secrets:
+**Why an App is needed at all.** GitHub deliberately refuses to let a workflow
+start another workflow using the stock `GITHUB_TOKEN`: a `workflow_dispatch`
+made with it is accepted and silently starts no run, and a commit it authors
+raises no event. The rule exists to stop a workflow looping forever on its own
+output, and the corrections flow runs straight into it, because that flow's
+last act is exactly such a dispatch — `20-corrections` ends by running
+`gh workflow run 10-generate.yml -f reuse_audit_run_id=<id>`. With
+`GITHUB_TOKEN` that call does nothing at all. So closing the decision loop
+needs an identity of its own, one whose actions GitHub does treat as triggers.
+A **GitHub App installed on this repository** is that identity, and the only
+reason it exists here.
+
+**Why an App rather than a personal access token.** A PAT would satisfy the
+same rule, and that is the whole of its case. An App is owned by the
+organisation rather than by a person, so it does not leave when they do; it is
+installed on named repositories with named permissions, instead of carrying
+one account's whole reach; and what sits in the secret is a private key, from
+which `actions/create-github-app-token` mints an installation token afresh on
+each run — valid for an hour, then worthless — rather than a long-lived
+credential waiting in a secret store for somebody to remember to rotate it.
+The correction PRs are then attributed to the App, so the history reads as the
+pipeline acting rather than as a maintainer who did not.
+
+**The two secrets.** The App's credentials are set as repository secrets:
 
 | Secret | What it is |
 |---|---|
-| `TFPFGEN_APP_ID` | App ID of the pipeline's GitHub App. |
-| `TFPFGEN_APP_PRIVATE_KEY` | PEM private key of that same App. |
+| `TFPFGEN_APP_ID` | App ID of the pipeline's GitHub App. Not secret in itself — it is on the App's settings page — but the workflows read it as a secret so that its absence and the key's are one condition. |
+| `TFPFGEN_APP_PRIVATE_KEY` | The PEM private key of that same App, exactly as downloaded. |
 
-These are the **pipeline's** App and are unrelated to `TFPFGEN_AUTH_APP_ID`
-and `TFPFGEN_AUTH_APP_PRIVATE_KEY` in the secrets table above, which are one
-way of authenticating to the API being audited. Setting one pair does not set
-the other.
+Both are optional, and both workflows test them together: the App path is
+taken only when `TFPFGEN_APP_ID` and `TFPFGEN_APP_PRIVATE_KEY` are both
+non-empty. Setting one alone changes nothing.
 
-The App needs repository permissions **contents: write** (to commit rejection
-markers and correction branches), **pull requests: write** (to open and read
-the correction PRs) and **issues: write** (labels are the issues API, even on
-a pull request). The toolkit does not ship an App and does not name one —
-your organisation supplies it and installs it on this provider repository.
+**They are not the audit's credentials.** `TFPFGEN_APP_*` is the pipeline's
+own identity on GitHub. `TFPFGEN_AUTH_*` — including
+`TFPFGEN_AUTH_APP_ID` and `TFPFGEN_AUTH_APP_PRIVATE_KEY` in the secrets table
+above — are credentials for the API this repository audits, read only by the
+audit job. The two prefixes are one letter apart in the middle and have
+nothing to do with each other; setting one pair does not set the other, and
+putting the audited API's App into `TFPFGEN_APP_*` would hand the pipeline a
+key GitHub does not recognise.
 
-With the secrets absent everything else still works: correction PRs are still
-opened, still labelled, and your merges and closes are still recorded as
-acceptances and rejections. Only the automatic resume is skipped — the
-workflow says so in its log rather than failing — and the manual dispatch
-above takes its place.
+**The permissions, and what exercises each.** Grant the App these four
+repository permissions and no others:
+
+| Permission | Exercised by |
+|---|---|
+| **contents: write** | Pushing each `tfpfgen/correction-<observationID>` branch in `10-generate`, and committing the rejection marker to the default branch in `20-corrections`. |
+| **pull requests: write** | Opening one correction PR per proposal, and listing the open ones to decide whether any decision is still outstanding. |
+| **issues: write** | Creating and applying the `tfpfgen-correction` label — labels are the issues API even on a pull request, so labelling fails without it. |
+| **actions: write** | Dispatching the continuation run — the `gh workflow run` above, the thing the App exists for. |
+
+A workflow job's own `permissions:` block bounds `GITHUB_TOKEN` only; it has
+no effect on the App's token, which carries whatever the installation was
+granted. These four therefore have to be granted on the App itself, not
+inferred from the workflows.
+
+**Registering and installing it.** Do this once per organisation and reuse the
+same App for every provider repository — it is installed per repository, so
+one registration serves all of them.
+
+1. Register the App on the organisation — **Settings → Developer settings →
+   GitHub Apps → New GitHub App**, following
+   [GitHub's instructions](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app).
+   In the `deploymenttheory` organisation this App already exists and is
+   called **`tfpfgen-pipeline`**, App ID **`4561840`**; install that one
+   rather than registering a second.
+2. **Untick Active under Webhook.** The pipeline never receives webhooks — it
+   only ever calls the REST API — so an active webhook would only ask GitHub
+   to post to a URL nothing reads.
+3. Set the four repository permissions in the table above.
+4. **Generate a private key** at the foot of the App's settings page. GitHub
+   hands you a `.pem` once and keeps no copy of it; a key can be revoked and
+   another generated at any time.
+5. **Install the App on this repository** — App settings → Install App → the
+   organisation → *Only select repositories*.
+6. Set the two repository secrets. The key is read from the file rather than
+   pasted, so it never reaches a shell history:
+
+   ```bash
+   gh secret set TFPFGEN_APP_ID --body <the App ID from its settings page>
+   gh secret set TFPFGEN_APP_PRIVATE_KEY < <the .pem you downloaded>
+   ```
+
+   Delete the local `.pem` afterwards; it has no further use, and generating a
+   replacement is a two-click job if it is ever needed again.
+
+Setting the pair once at organisation level instead saves repeating step 6 for
+every provider repository:
+
+```bash
+gh secret set TFPFGEN_APP_ID --org <org> --visibility selected \
+  --repos terraform-provider-<name>
+```
+
+That needs `admin:org` on whatever token `gh` is authenticated with, which a
+repository-scoped token does not carry. Repository secrets are the fallback
+and behave identically — the workflows cannot tell which they were handed.
+
+**What happens without the App.** The pipeline is not blocked by its absence,
+and nothing is lost. Both workflows fall back to `github.token`: correction
+PRs are still opened, still labelled, still carry their justification and
+evidence; merging still accepts; closing still writes the rejection marker to
+`spec/corrections/rejected/`. The single missing step is the automatic resume,
+and the workflow says so rather than failing. `10-generate` warns at the point
+it opens the PRs:
+
+> `TFPFGEN_APP_ID/TFPFGEN_APP_PRIVATE_KEY` are unset; correction PRs are
+> opened with `github.token`. They open and merge normally, but a merge
+> authored by `GITHUB_TOKEN` raises no event, so the continuation run must be
+> dispatched by hand.
+
+and when the last correction is decided, `20-corrections` prints the run id to
+dispatch with:
+
+> every correction is decided. Dispatch `10-generate.yml` with
+> `reuse_audit_run_id=<id>` to continue — a `GITHUB_TOKEN` dispatch starts no
+> run, so install the tfpfgen App to have this happen by itself.
+
+That is the manual dispatch described above, and it resumes from the same
+observations, so it costs no extra API calls. The App buys one thing: not
+having to read that notice.
 
 ### What a first run looks like
 
