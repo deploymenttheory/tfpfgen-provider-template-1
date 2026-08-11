@@ -168,10 +168,9 @@ the rejected ones carry markers, and only genuinely new findings are
 proposed.
 
 If reviewing a whole batch by hand is more than you want, `audit.auto_accept`
-is the lever. Put on it the observation kinds you already trust for this API —
-`serverDefault` and `readAfterWrite` are common first choices — and their
-corrections stop asking. The kinds that assert a structural constraint
-(`immutable`, `mutuallyExclusive`, `validConfiguration`) are the ones most
+is the lever. Put on it the observation kinds you already trust for this API
+and their corrections stop asking. The kinds that assert a structural
+constraint (`immutable`, `mutuallyExclusive`, `validConfiguration`) are those most
 worth keeping under review, because they close doors on the generated
 provider's schema. The list takes observation-kind names from a closed
 vocabulary; `tfpfgen config validate` rejects an unknown one and prints the
