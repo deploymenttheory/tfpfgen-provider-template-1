@@ -34,7 +34,17 @@ auth:
 #   name_prefix: tfpfgen # prefix every live object the audit creates carries; cleanup matches on it
 #   max_objects: 25 # budget of live objects one audit run may create
 #   rate_limit_rps: 2 # requests per second the audit may send to the live API
-#   auto_accept: [] # correction categories folded in by `tfpfgen spec revise` without waiting for a human
+#   # Observation kinds whose corrections `tfpfgen spec revise` applies without
+#   # waiting for a human. Every correction of any other kind arrives as its own
+#   # pull request to review. These are observation-kind names, not free text —
+#   # `tfpfgen config validate` rejects an unknown one and lists the vocabulary
+#   # (writable, immutable, requiredByAPI, requiredWhen, serverDefault,
+#   # derivedDefault, normalisation, ignoredOnUpdate, serverForced, volatile,
+#   # values, updateStyle, deleteNotFoundOK, readAfterWrite,
+#   # undocumentedFieldInSpec, validWhen, dependsOn, mutuallyExclusive,
+#   # validConfiguration). Empty means every correction is reviewed; which kinds
+#   # you trust unreviewed is yours to decide.
+#   auto_accept: [] # e.g. [serverDefault, readAfterWrite, deleteNotFoundOK]
 
 # services:
 #   exclude: [] # spec entities that become no provider code
