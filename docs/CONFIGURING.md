@@ -6,9 +6,10 @@ generation — no dispatch form to fill in, no settings held in somebody's
 memory. A setting in `tfpfgen.yaml` arrives through a pull request: it can be
 reviewed, explained in a commit message, compared, and reverted.
 
-Two more authored paths exist, both data: `spec/corrections/` and
-`audit/inputs.json`. Everything else in the tree is derived, digest-tracked
-in `manifest.json`, and regenerated wholesale — see `CLAUDE.md`.
+Two more authored paths exist, both data: `spec/corrections/` (corrections to
+the imported document) and `audit/inputs.json` (a rarely-needed escape hatch —
+see [The audit](#the-audit)). Everything else in the tree is derived,
+digest-tracked in `manifest.json`, and regenerated wholesale — see `CLAUDE.md`.
 
 ## Filling tfpfgen.yaml
 
@@ -83,41 +84,69 @@ committed observations exist yet. Otherwise the committed observations are
 used as-is. A dispatch can also pass `reuse_audit_run_id` to carry forward
 the observations of an earlier pipeline run instead of auditing again.
 
-**It creates real objects — and deletes them.** Every one carries the
-`audit.name_prefix`, the run is bounded by `audit.max_objects` and
-`audit.rate_limit_rps`, and cleanup deletes prefix-matched objects at the
-start and end of every run. Even so: run the audit only against sandbox or
-non-production tenants. The toolkit does not police this — it is the
-operator's responsibility.
+**It creates and deletes real objects.** Every object it creates carries the
+`audit.name_prefix`; the run is bounded by `audit.max_objects` and
+`audit.rate_limit_rps`; and cleanup deletes prefix-matched objects at the
+start and end of every run. Run the audit only against a sandbox or other
+non-production tenant. The toolkit does not police this — pointing it at a
+disposable tenant, never production, is the operator's responsibility. On a
+shared tenant that already holds foreign objects beyond the object budget the
+audit refuses to start; `--force-api-audit` on `tfpfgen audit run` overrides
+that refusal.
 
-**`audit/inputs.json`** is the small optional authored file of values the
-audit cannot synthesize — a valid value for an example-less field, an
-existing parent object's id. Two token forms are understood:
+**The activity ledger.** Before each create request is sent, the audit writes
+and fsyncs a line to the run's activity ledger —
+`audit/runs/<runid>.activity.jsonl`, one entry per event (intent, created,
+rejected, deleted). It is never committed: it records live objects in
+someone's tenant. If a run crashes, `tfpfgen audit cleanup` replays the ledger
+to delete by id whatever was left behind. `audit/runs/` is the audit's working
+directory and is git-ignored.
+
+**The audit is adaptive — you do not pre-seed values.** It learns each
+entity's required fields from the API's own 4xx responses and borrows valid
+references by reading objects that already exist, so there is normally nothing
+to author. `audit/inputs.json` is a rarely-needed escape hatch, not a routine
+file: it exists only for genuinely non-discoverable operational facts the
+audit can neither synthesize nor read back. When it is present, three token
+forms are understood:
 
 - `${VAR}` — read from the named environment variable at execution time,
   for values that are secret or per-tenant.
 - `$created:<entity>` — the id of an object the audit itself created, for
   fields that must reference a live parent.
+- `<runid>` — the run-id placeholder execution substitutes into synthesised
+  names.
 
 Its absence degrades gracefully — the audit covers what it can.
 
 ## Corrections
 
 When observations show the published document is wrong about the live API,
-`tfpfgen spec revise` folds them into proposed corrections under
+`tfpfgen spec revise` **proposes** corrections under
 `spec/corrections/proposed/` — each one RFC 6902 operations plus a
-justification and an evidence pointer to an observation. The pipeline
+justification and an evidence pointer to an observation. The verb
 **hard-fails while any proposal is pending**, naming each file; no ignore
 flag exists. Resolve every proposal in one of two ways:
 
 - **Accept** — move the file into `spec/corrections/`. Revision applies it
   to produce `spec/revised.yaml`, the single source of truth for all
   generation.
-- **Reject** — leave a marker in `spec/corrections/rejected/` carrying your
-  justification. The proposal will not be re-raised.
+- **Reject** — leave a marker in `spec/corrections/rejected/`: one JSON file
+  naming the observation id and the reason, shaped
+  `{"observationID": "…", "reason": "…", "rejectedAt": "…"}`. The proposal is
+  never re-raised while the marker stands; deleting the marker is the only way
+  back.
 
-Correction categories listed in `audit.auto_accept` are folded in without
-waiting; everything else waits for a human.
+Correction categories listed in `tfpfgen.yaml`'s `audit.auto_accept` skip
+`proposed/` and land accepted directly (named with an `auto-NNN-` prefix);
+everything else waits for a human.
+
+Some corrections do more than fix a field. From what it learns about the API's
+conditional behaviour, the audit can add `x-tfpfgen-*` extensions to the
+revised spec — `x-tfpfgen-valid-when`, `-valid-configuration`, `-depends-on`,
+`-mutually-exclusive` and `-required-when`, alongside eventual-consistency and
+`x-tfpfgen-update-style` annotations — and generation turns each of these into
+a config validator on the emitted resource.
 
 ## Releasing
 
