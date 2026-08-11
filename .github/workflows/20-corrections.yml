@@ -1,0 +1,16 @@
+# Thin caller: recording a correction decision, and resuming generation once
+# none are left open, live in the toolkit. It guards on the label itself.
+name: corrections
+on:
+  pull_request:
+    types: [closed]
+permissions:
+  contents: write
+  pull-requests: read
+  actions: write
+jobs:
+  corrections:
+    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/20-corrections.yml@v0
+    with:
+      generate_workflow: 10-generate.yml
+    secrets: inherit

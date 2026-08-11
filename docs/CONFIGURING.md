@@ -51,6 +51,12 @@ only the roles your `auth.method` needs:
 Releases separately need `GPG_PRIVATE_KEY` and — when the key has one —
 `GPG_PRIVATE_KEY_PASSPHRASE`; the registry requires signed checksums.
 
+Two further optional secrets, `TFPFGEN_APP_ID` and `TFPFGEN_APP_PRIVATE_KEY`,
+belong to the pipeline's own GitHub App rather than to any `auth.method`. They
+are what lets generation resume by itself after the last correction is
+decided — see
+[The GitHub App the auto-continuation needs](#the-github-app-the-auto-continuation-needs).
+
 Validation checks presence without reading values; only the audit job ever
 receives them. Acceptance tests use a different namespace entirely — the
 `TF_<PROVIDER>_*` variables the generated provider itself reads, held in a
@@ -64,11 +70,133 @@ API's OpenAPI document. The run pins it by hash, records the URL, and every
 later run re-imports from `spec.document_url` in `tfpfgen.yaml` — the input
 is never needed again.
 
-One run does the whole chain and opens one pull request on a
-`tfpfgen/run-<id>` branch: validate the config, import the document, audit
+One run does the whole chain: validate the config, import the document, audit
 the live API, revise the spec, generate the SDK, generate the provider,
-verify it all, propose the diff. Re-run it whenever an input changes; a run
-that changed nothing opens nothing.
+verify it all, and open a pull request on a `tfpfgen/run-<id>` branch. Re-run
+it whenever an input changes; a run that changed nothing opens nothing.
+
+The chain does not always reach the end in one pass. When the audit finds the
+document wrong about the live API, revision has corrections to propose, and
+proposals you have not yet decided stop the run — see
+[The corrections decision flow](#the-corrections-decision-flow).
+
+## The workflows
+
+Six workflows are stamped into `.github/workflows/`, numbered so they read in
+pipeline order. Each is a thin caller; the behaviour lives in the toolkit.
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `10-generate` | dispatch | The generation chain above. Also publishes the proposed corrections and opens one pull request per correction. |
+| `20-corrections` | a correction pull request closing | Records your decision on it, and resumes generation once no correction PR is left open. |
+| `30-ci` | push to `main`, pull requests | Build, vet, lint, coverage gate, and the drift gates that refuse a hand edit to a derived file. |
+| `40-acceptance` | dispatch (schedule, once enabled) | Live acceptance tests against a real tenant, gated by a GitHub environment. Never on push — it spends real API quota. |
+| `50-docs` | weekly, dispatch | Regenerates `docs/` from the provider schema; opens a PR only when they drifted. |
+| `60-release` | a `v*` tag push | Preflight, GPG-sign and publish the release the Terraform Registry ingests. |
+
+## The corrections decision flow
+
+This is the one part of the pipeline that waits for you.
+
+**Where corrections come from.** After the audit, `tfpfgen spec revise`
+compiles the confirmed observations into proposed corrections — each one a
+set of RFC 6902 operations against the imported document, a required
+justification, and an evidence pointer to the observation that proves it.
+A correction is only ever compiled from what the live API actually did.
+
+**What is decided for you.** Observation kinds listed in `audit.auto_accept`
+in `tfpfgen.yaml` skip proposal: their corrections land accepted directly,
+named with an `auto-NNN-` prefix, and you never see a pull request for them.
+Nothing is on that list until you put it there.
+
+**What is asked of you.** Every other proposal becomes **its own pull
+request**, labelled `tfpfgen-correction`. One PR carries exactly one
+correction file, so each decision is separable — you can accept the enum
+widening and refuse the immutability claim in the same batch. The PR body
+carries the justification, the RFC 6902 operations, and the pointer to the
+audit evidence behind it.
+
+**How to decide.** There are two answers and no third:
+
+- **Accept — merge the pull request.** The merge moves the correction file
+  into `spec/corrections/`, where revision applies it to produce
+  `spec/revised.yaml`, the single source of truth for all generation.
+- **Reject — close the pull request without merging.** A rejection marker is
+  committed to `spec/corrections/rejected/<observation-id>.json`, and that
+  observation is never proposed again while the marker stands. **The last
+  comment on the PR becomes the recorded reason**, so leave one before you
+  close — the marker is what a future maintainer reads to understand the
+  refusal, and with no comment it records only "closed without merging".
+  Deleting the marker is the only way to make the proposal eligible again.
+
+`tfpfgen spec revise` hard-fails while any proposal is still pending, naming
+each file. There is no ignore flag, and a correction cannot be left undecided
+and forgotten.
+
+**What happens next.** Closing the last open correction PR is the trigger:
+`20-corrections` sees that none remain and resumes generation, reusing the
+observations the audit already recorded. No new API calls are made — your
+decisions are replayed against evidence already on disk — and the run
+continues through SDK generation, provider generation and verification to
+open the generated-provider PR on `tfpfgen/run-<id>`.
+
+That auto-continuation is the only part of the flow that depends on more than
+the stock `GITHUB_TOKEN`; see below. Without it, nothing is lost and nothing
+is stuck — the run's log tells you the run id, and you dispatch
+**Actions → generate → Run workflow** yourself with `reuse_audit_run_id` set
+to the number on the `tfpfgen-run-id:` line at the foot of any correction PR
+body. The run continues from the same observations.
+
+### The GitHub App the auto-continuation needs
+
+A `workflow_dispatch` made with `GITHUB_TOKEN` starts no run — GitHub blocks
+that deliberately, to stop workflows triggering themselves forever. So
+resuming generation after the last correction PR closes requires a token that
+is not `GITHUB_TOKEN`: a **GitHub App installed on this repository**, whose
+credentials are set as two repository secrets:
+
+| Secret | What it is |
+|---|---|
+| `TFPFGEN_APP_ID` | App ID of the pipeline's GitHub App. |
+| `TFPFGEN_APP_PRIVATE_KEY` | PEM private key of that same App. |
+
+These are the **pipeline's** App and are unrelated to `TFPFGEN_AUTH_APP_ID`
+and `TFPFGEN_AUTH_APP_PRIVATE_KEY` in the secrets table above, which are one
+way of authenticating to the API being audited. Setting one pair does not set
+the other.
+
+The App needs repository permissions **contents: write** (to commit rejection
+markers and correction branches), **pull requests: write** (to open and read
+the correction PRs) and **issues: write** (labels are the issues API, even on
+a pull request). The toolkit does not ship an App and does not name one —
+your organisation supplies it and installs it on this provider repository.
+
+With the secrets absent everything else still works: correction PRs are still
+opened, still labelled, and your merges and closes are still recorded as
+acceptances and rejections. Only the automatic resume is skipped — the
+workflow says so in its log rather than failing — and the manual dispatch
+above takes its place.
+
+### What a first run looks like
+
+Expect a batch. On a large API the first audit has the whole surface to learn
+at once, and it is normal for the first revision to propose **dozens** of
+corrections, each arriving as its own pull request. This is the flow working:
+one API's worth of accumulated document drift, surfaced all at once, each
+claim separately evidenced and separately refusable.
+
+Later runs are quiet by comparison — the accepted corrections are committed,
+the rejected ones carry markers, and only genuinely new findings are
+proposed.
+
+If reviewing a whole batch by hand is more than you want, `audit.auto_accept`
+is the lever. Put on it the observation kinds you already trust for this API
+and their corrections stop asking. The kinds that assert a structural
+constraint (`immutable`, `mutuallyExclusive`, `validConfiguration`) are those most
+worth keeping under review, because they close doors on the generated
+provider's schema. The list takes observation-kind names from a closed
+vocabulary; `tfpfgen config validate` rejects an unknown one and prints the
+vocabulary.
 
 ## The audit
 
@@ -119,27 +247,17 @@ forms are understood:
 
 Its absence degrades gracefully — the audit covers what it can.
 
-## Corrections
+## What a correction can carry
 
-When observations show the published document is wrong about the live API,
-`tfpfgen spec revise` **proposes** corrections under
-`spec/corrections/proposed/` — each one RFC 6902 operations plus a
-justification and an evidence pointer to an observation. The verb
-**hard-fails while any proposal is pending**, naming each file; no ignore
-flag exists. Resolve every proposal in one of two ways:
+How corrections are decided is
+[The corrections decision flow](#the-corrections-decision-flow) above. What
+they contain is worth knowing before you review one.
 
-- **Accept** — move the file into `spec/corrections/`. Revision applies it
-  to produce `spec/revised.yaml`, the single source of truth for all
-  generation.
-- **Reject** — leave a marker in `spec/corrections/rejected/`: one JSON file
-  naming the observation id and the reason, shaped
-  `{"observationID": "…", "reason": "…", "rejectedAt": "…"}`. The proposal is
-  never re-raised while the marker stands; deleting the marker is the only way
-  back.
-
-Correction categories listed in `tfpfgen.yaml`'s `audit.auto_accept` skip
-`proposed/` and land accepted directly (named with an `auto-NNN-` prefix);
-everything else waits for a human.
+Every correction is RFC 6902 operations against the imported document, plus a
+justification and an evidence pointer to the observation behind it. Accepted
+ones live in `spec/corrections/`; a rejection leaves one JSON file in
+`spec/corrections/rejected/`, shaped
+`{"observationID": "…", "reason": "…", "rejectedAt": "…"}`.
 
 Some corrections do more than fix a field. From what it learns about the API's
 conditional behaviour, the audit can add `x-tfpfgen-*` extensions to the
@@ -151,7 +269,7 @@ a config validator on the emitted resource.
 ## Releasing
 
 Push a tag `vX.Y.Z`. The tag push triggers the release workflow, which calls
-the toolkit's `50-release.yml`: preflight the tree (`go mod tidy` is a fixed
+the toolkit's `60-release.yml`: preflight the tree (`go mod tidy` is a fixed
 point, the provider builds), import the GPG key, and let goreleaser build,
 sign and publish the multi-platform release the Terraform Registry ingests.
 `terraform-registry-manifest.json` declares protocol version 6.0.

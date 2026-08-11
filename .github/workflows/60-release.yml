@@ -7,7 +7,7 @@ permissions:
   contents: write
 jobs:
   release:
-    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/50-release.yml@v0
+    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/60-release.yml@v0
     secrets:
       gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
       gpg-private-key-passphrase: ${{ secrets.GPG_PRIVATE_KEY_PASSPHRASE }}
