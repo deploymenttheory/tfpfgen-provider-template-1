@@ -16,6 +16,9 @@ crash.log
 override.tf
 override.tf.json
 
+# Audit working files: the activity ledgers record live objects in a tenant and are never committed
+audit/runs/
+
 # Local agent state
 .claude/
 
