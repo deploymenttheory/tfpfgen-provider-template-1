@@ -8,10 +8,11 @@ data files (`tfpfgen.yaml`, `spec/corrections/`, `audit/inputs.json`);
 everything else is derived from the API's OpenAPI document and regenerated
 wholesale.
 
-The template stamps identity only. Nothing here executes: the five workflows
-are thin callers into the toolkit's reusable workflows at the moving major
-tag (`@v0` until the 1.0.0 contract freeze, `@v1` after), so behavior
-improvements reach every provider repo without touching it.
+The template stamps identity only. Nothing here executes: the six workflows —
+`10-generate`, `20-corrections`, `30-ci`, `40-acceptance`, `50-docs`,
+`60-release` — are thin callers into the toolkit's reusable workflows at the
+moving major tag (`@v0` until the 1.0.0 contract freeze, `@v1` after), so
+behavior improvements reach every provider repo without touching it.
 
 ## Quickstart
 
@@ -34,9 +35,16 @@ improvements reach every provider repo without touching it.
 4. **Dispatch the pipeline** (Actions → generate → Run workflow), passing
    `openapi_url` on the first run — before the tree carries the pinned
    document.
-5. **Review the pull request** the run opens on `tfpfgen/run-<id>`. The
-   pipeline proposes; humans merge.
+5. **Decide the corrections.** After the audit, the run opens one pull
+   request per proposed spec correction, each labelled `tfpfgen-correction`
+   and carrying a single correction with its justification and the audit
+   evidence behind it. Merge to accept; close without merging to reject.
+   On a large API the first run can propose dozens — `audit.auto_accept`
+   is how you stop reviewing the kinds you already trust.
+6. **Review the generated pull request.** Once no correction PR is left
+   open, generation resumes from the same observations and opens the
+   provider PR on `tfpfgen/run-<id>`. The pipeline proposes; humans merge.
 
-Everything else — the audit against the live API, corrections to the spec,
-releasing to the Terraform Registry — is in
+Everything else — the audit against the live API, the corrections decision
+flow, releasing to the Terraform Registry — is in
 [docs/CONFIGURING.md](docs/CONFIGURING.md).

@@ -31,18 +31,26 @@ To change what gets generated, change an input:
 ## Corrections are resolved by humans, explicitly
 
 `tfpfgen spec revise` hard-fails while `spec/corrections/proposed/` is
-non-empty, and no flag exists to look away. Each proposed correction is
-resolved in exactly one of two ways:
+non-empty, and no flag exists to look away. The pipeline turns each pending
+proposal into its own pull request, labelled `tfpfgen-correction`, and the
+decision is made by what you do with that PR:
 
-- **Accept** — move the file into `spec/corrections/`.
-- **Reject** — leave a marker in `spec/corrections/rejected/` with a
-  justification saying why the observation does not warrant the change.
+- **Accept** — merge it. The merge moves the correction file into
+  `spec/corrections/`.
+- **Reject** — close it without merging. A marker is committed to
+  `spec/corrections/rejected/` and the closing comment is recorded as the
+  reason; that observation is never proposed again while the marker stands.
+
+Never resolve a proposal by hand-editing the tree when a correction PR is
+open for it — the two paths would disagree. Kinds listed in
+`audit.auto_accept` skip proposal entirely.
 
 ## The pipeline proposes; humans merge
 
-Generation runs open pull requests on branches named `tfpfgen/run-<id>`.
-Review and merge them; never commit generated output directly, and never
-merge a generation PR without reading its diff.
+When no correction PR is left open, generation resumes on the existing
+observations and opens a pull request on a branch named `tfpfgen/run-<id>`.
+Review and merge it; never commit generated output directly, and never merge
+a generation PR without reading its diff.
 
 `generator.version` in `tfpfgen.yaml` pins the exact toolkit release the
 pipeline installs. It moves only via a reviewed pull request — never as a
