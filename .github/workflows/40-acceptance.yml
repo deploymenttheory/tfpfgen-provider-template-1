@@ -10,7 +10,7 @@ permissions:
   contents: read
 jobs:
   acceptance:
-    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/30-acceptance.yml@v0
+    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/40-acceptance.yml@v0
     with:
       environment: ${{ inputs.environment || 'acceptance' }}
     secrets: inherit

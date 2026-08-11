@@ -8,4 +8,4 @@ permissions:
   contents: read
 jobs:
   ci:
-    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/20-ci.yml@v0
+    uses: deploymenttheory/terraform-plugin-framework-codegen-1/.github/workflows/30-ci.yml@v0
