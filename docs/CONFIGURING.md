@@ -87,7 +87,7 @@ pipeline order. Each is a thin caller; the behaviour lives in the toolkit.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `10-generate` | dispatch | The generation chain above. Also publishes the proposed corrections and opens one pull request per correction. |
+| `10-generate` | dispatch | The generation chain above. Also publishes the proposed corrections and opens one pull request per entity per observation kind. |
 | `20-corrections` | a correction pull request closing | Records your decision on it, and resumes generation once no correction PR is left open. |
 | `30-ci` | push to `main`, pull requests | Build, vet, lint, coverage gate, and the drift gates that refuse a hand edit to a derived file. |
 | `40-acceptance` | dispatch (schedule, once enabled) | Live acceptance tests against a real tenant, gated by a GitHub environment. Never on push — it spends real API quota. |
@@ -109,12 +109,27 @@ in `tfpfgen.yaml` skip proposal: their corrections land accepted directly,
 named with an `auto-NNN-` prefix, and you never see a pull request for them.
 Nothing is on that list until you put it there.
 
-**What is asked of you.** Every other proposal becomes **its own pull
-request**, labelled `tfpfgen-correction`. One PR carries exactly one
-correction file, so each decision is separable — you can accept the enum
-widening and refuse the immutability claim in the same batch. The PR body
-carries the justification, the RFC 6902 operations, and the pointer to the
-audit evidence behind it.
+**What is asked of you.** Every other proposal becomes a **pull request**
+labelled `tfpfgen-correction`, one per entity per observation kind. So the
+enum widenings on one resource arrive as one decision and its immutability
+claims as another, and you can accept the first while refusing the second.
+Within a PR the findings stand or fall together: merging accepts all of them,
+closing rejects all of them.
+
+The body is written to be read rather than parsed. For each field it states
+the request the audit made, what the document led it to expect, what the API
+actually answered, and what the difference costs you if it goes unrecorded —
+with the request and response bodies quoted as formatted JSON. Where every
+finding in the PR came from the same exchange, that exchange is shown once at
+the top instead of repeated under each field. The RFC 6902 operations and
+observation IDs are folded away at the foot for anyone who wants the
+mechanism.
+
+**Re-running generation while decisions are open** refreshes them in place. An
+undecided PR is rewritten to the newest evidence — same branch, same PR
+number, no duplicate opened beside it — so a decision you have not answered
+yet never shows you a stale reading. PRs you already merged or closed are left
+alone.
 
 **How to decide.** There are two answers and no third:
 
