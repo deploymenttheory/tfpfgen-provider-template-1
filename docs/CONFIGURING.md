@@ -148,6 +148,19 @@ alone.
 each file. There is no ignore flag, and a correction cannot be left undecided
 and forgotten.
 
+**A third thing can happen, and you do not do it.** If a later run stops
+observing a finding — because the toolkit was fixed, or the API changed — the
+pipeline closes that pull request itself, labels it `tfpfgen-withdrawn`, and
+records **nothing**. There is no marker, and if the finding is ever observed
+again it is proposed again.
+
+This matters because closing a correction PR by hand is always read as a
+rejection. Do that to a finding the audit got wrong for its own reasons and you
+suppress the corrected version along with it — the marker is what blocks
+re-proposal, and only deleting the file lifts it. When a batch of proposals
+turns out to be unsound, re-run generation and let it withdraw them rather than
+closing them yourself.
+
 **What happens next.** Closing the last open correction PR is the trigger:
 `20-corrections` sees that none remain and resumes generation, reusing the
 observations the audit already recorded. No new API calls are made — your
